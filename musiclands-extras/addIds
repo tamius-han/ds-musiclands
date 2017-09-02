@@ -1,0 +1,11 @@
+#!/bin/bash
+
+idFile=$1
+pointFile=$2
+
+lines=$(cat $pointFile | wc -l)
+
+cat "$idFile" | awk '{print $1}' | head -n $lines > /tmp/tmp_ids
+paste /tmp/tmp_ids $pointFile
+
+rm /tmp/tmp_ids

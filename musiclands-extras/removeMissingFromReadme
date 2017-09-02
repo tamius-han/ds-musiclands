@@ -1,0 +1,33 @@
+#!/bin/bash
+# removes missing entries from the readme file
+#
+# usage: removeMissingFromReadme [input file] [output file] [directory with files]
+#
+
+source colors.sh
+
+inputFile=$1
+outputFile=$2
+directory=$3
+
+#internal stuff
+allFiles=0
+foundFiles=0
+missingFiles=0
+
+while IFS='' read -r line || [[ -n "$line" ]] ; do
+  
+  id=$(echo $line | awk '{print $1}')
+  
+  if [ -f $directory/${id}.mp3.mrscore ] ; then
+    foundFiles=$(($foundFiles + 1))
+    echo "$line"
+  else
+    missingFiles=$(($missingFiles + 1))
+  fi
+  allFiles=$(($allFiles + 1))
+  
+done < $inputFile
+
+echo ""
+printf "Total files: $allFiles\nFound files: $Green$foundFiles$Color_Off\nMissing files: $BRed$missingFiles$Color_Off\n" > &2
