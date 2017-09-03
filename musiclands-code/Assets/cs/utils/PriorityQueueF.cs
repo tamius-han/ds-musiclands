@@ -14,21 +14,34 @@ public class PriorityQueueF<T> {
     this.isMaxHeap = isMax;
     elements = new List<PqElementF<T>>();
   }
+  public PriorityQueueF(string type){
+    if(type == "min")
+      this.isMaxHeap = false;
+    else /*if (type == "max")*/
+      this.isMaxHeap = true;
+//     else throw exception
+    elements = new List<PqElementF<T>>();
+  }
     
   public void Enqueue(T element, float priority){
     PqElementF<T> neu = new PqElementF<T>(element, priority);
-    
+
     elements.Add(neu);
     
     // tu imamo dve možnosti:
     // 1. prioriteta ni več večja od trenutnega elementa
     // 2. gledamo zadnji element
     
-    Sink(elements.Count - 1);
+    Unsink(elements.Count - 1);
+
   }
   
   public bool IsEmpty(){
     return elements.Count == 0;
+  }
+  
+  public int Count(){
+    return elements.Count;
   }
   
   public T Dequeue(){
@@ -42,6 +55,22 @@ public class PriorityQueueF<T> {
     return gib;
   }
   
+  public T Peek(){
+    if(this.elements.Count == 0)
+      return default(T);
+    return this.elements[0].element;
+  }
+  
+  public T Tail(){
+    // returns last element in the queue, no remove
+    if(this.elements.Count == 0)
+      return default(T);
+    return this.elements[elements.Count - 1].element;
+  }
+  
+  public T ElementAt(int index){
+    return this.elements[index].element;
+  }
   
   // internal methods
   
@@ -139,6 +168,38 @@ public class PriorityQueueF<T> {
       SinkMin(imanj);
     }
   }
+  
+  void Unsink(int indexUnsink){
+    if(this.isMaxHeap)
+      UnsinkMax(indexUnsink);
+    else
+      UnsinkMin(indexUnsink);
+  }
+  
+  void UnsinkMax(int indexUnsink){
+    if(indexUnsink == 0)
+      return;
+    
+    int parent = (indexUnsink - 1) >> 1;
+    
+    if( elements[indexUnsink].priority > elements[parent].priority ){
+      Swap(indexUnsink, parent);
+      UnsinkMax(parent);
+    }
+  }
+  
+  void UnsinkMin(int indexUnsink){
+    if(indexUnsink == 0)
+      return;
+    
+    int parent = (indexUnsink - 1) >> 1;
+    
+    if( elements[indexUnsink].priority < elements[parent].priority ){
+      Swap(indexUnsink, parent);
+      UnsinkMin(parent);
+    }
+  }
+
   
 }
 

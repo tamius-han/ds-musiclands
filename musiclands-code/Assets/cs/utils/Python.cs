@@ -51,4 +51,27 @@ public class Python : MonoBehaviour {
     
     return 0;
   }
+  
+  public static string RunScriptGetStdout(string name, string args){
+    // things are different on different operating systems, so on the first python script that we run, 
+    // we also check what OS we're on and handle things appropriately
+    if (pythonExec == "") {
+      // todo: read executable name from settings
+      pythonExec = "/usr/bin/python2";
+    }
+    string output;
+    
+    Process proc = new Process();
+    proc.StartInfo.FileName = pythonExec;
+    proc.StartInfo.UseShellExecute = false;
+    proc.StartInfo.RedirectStandardOutput = true;
+    proc.StartInfo.Arguments = (GlobalData.dataPath + pythonPath + name) + " " + args;
+    proc.Start();
+    
+    output = proc.StandardOutput.ReadToEnd();
+    
+    proc.WaitForExit();
+    
+    return output;
+  }
 }

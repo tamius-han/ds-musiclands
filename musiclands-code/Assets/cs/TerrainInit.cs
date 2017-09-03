@@ -17,18 +17,42 @@ using System.Diagnostics;
 public class TerrainInit : MonoBehaviour {
 
   public static float TERRAIN_SIZE_MAX    = 768.0f;     // največji obseg, na katerem dovolimo točke
+  public static float TERRAIN_SIZE_MINI   = 256.0f;     // največji obseh, na katerem dovolimo točke pri N < MINI_TERRAIN_LIMIT
   public static int   TERRAIN_SIZE_ACTUAL = 1024;       // dejanska velikost terena, mora biti vselej int && >= TERRAIN_SIZE_MAX
   public static float TERRAIN_MAX_HEIGHT  = 69.0f;      // the tallest peak will be this high
-  public static float TERRAIN_RESOLUTION  = 1024.0f;    //
+  public static float TERRAIN_MAX_HEIGHT_CLIP = 0.0025f;// the "tallest peak" will have this many points lying higher of it
+  public static float TERRAIN_RESOLUTION  = 256.0f;     //
   public static int   CHUNK_LEVEL         = 5;          // on which level of terrainTree will we gather data for our chunks 
   public static int   CHUNK_SIZE          = 1 << CHUNK_LEVEL;
+  public static int   NUMBER_OF_CHUNKS    = TERRAIN_SIZE_ACTUAL >> CHUNK_LEVEL;
+  public static int   MINIMAL_NUMBER_OF_SONGS_FOR_TERRAIN = 500; // if we're trying to make a map with fewer than this 
+                                                                 // amount of songs, we just represent songs with cubes
+  public static int   MINI_TERRAIN_LIMIT  = 6000;       // if we have less songs than this, our island will be smaller
+  
+  public static float PLAYER_INITIAL_X    = 518.0f;     // initial positions for player
+  public static float PLAYER_INITIAL_Y    = 518.0f;
+  
+  public static int   SONG_GROUPING_CHUNK_LEVEL = 4;    // same as chunk level for easy playlist fetching
+  
+  public static int   LAYERS_MAP          = 8;          // maybe move to some layer enum?
   
   Terrain terrain;
-  TerrainTree terrainTree;
+  public TerrainTree terrainTree;
+  
+  public GameObject menuCam;
+  public GameObject player;
+  public GameObject peakIndicator;
+  public GameObject peakIndicator_fpcam;
+  public GameObject peakMarker;
+  public GameObject songMarker;
+  public GameObject songMarkerMapIndicator;
+  
+  // misc stuff
   public GameObject cube;
   public GameObject cube2;
   public GameObject cube3;
   public GameObject cube4;
+  
   
   float[,] heightmap_raw; //values in this array aren't normalized, but they are interpolated
   List<Peak> peaks;
@@ -57,7 +81,7 @@ public class TerrainInit : MonoBehaviour {
         
     Stopwatch sw = Stopwatch.StartNew();
     
-    List<MusicPoint> musicPoints = FileLoader.ReadMusicPoints("/home/tamius-han/Documents/Diplomska 2017/points20k_pca_run1_ids");
+    List<MusicPoint> musicPoints = FileLoader.ReadMusicPoints("/home/tamius-han/Documents/Diplomska 2017/1M_all");
 
     sw.Stop();
     print("[TerrainInit::FirstTimeSetup] — reading points complete in " + sw.ElapsedMilliseconds + " ms");
@@ -78,15 +102,37 @@ public class TerrainInit : MonoBehaviour {
     mainMenu.SetActive(false);
     loadingScreen.SetActive(true);
     
-    StartCoroutine("InitializeTerrainThread");
-  }
-  
-  IEnumerator InitializeTerrainThread(){
     
+
     if(! File.Exists(FIRST_TIME_SETUP_FILE)){
       SetLoadingScreenText("Performing first time setup tasks");
       FirstTimeSetup();
     }
+    
+    
+    StartCoroutine(InitializeTerrainThreadFirstTime());
+    
+  }
+
+  public void Descend(List<MusicPoint> musicPoints){
+    GlobalData.playerHasControl = false;
+    loadingScreen.SetActive(true);
+    
+    StartCoroutine(InitializeTerrainThread(musicPoints, true));
+  }
+  
+  public void Ascend(){
+    GlobalData.playerHasControl = false;
+    loadingScreen.SetActive(true);
+    
+    StartCoroutine(InitializeTerrainThread(null, false));
+  }
+  
+  IEnumerator InitializeTerrainThreadFirstTime(){
+    GpmConf.Login();
+    
+    player.SetActive(false);
+    menuCam.SetActive(true);
     
     // let's start fresh. 
     CacheOptions.Init();
@@ -103,229 +149,420 @@ public class TerrainInit : MonoBehaviour {
     Stopwatch sw2 = Stopwatch.StartNew();
     
     
+    print("td data?" + terrain.terrainData.bounds + " .. " + terrain.terrainData.heightmapWidth);
     SetLoadingScreenText("Loading track metadata");
     yield return null;
     
-    FileLoader.AddMusicMetadata(musicPoints, "/home/tamius-han/Documents/Diplomska 2017/metadata_20k.txt");
+    FileLoader.AddMusicMetadata(musicPoints, "/home/tamius-han/Documents/Diplomska 2017/metadata_1M");
     
     sw2.Stop();
     sw.Stop();
     print("loaded data and metadata in " + sw.ElapsedMilliseconds + " ms | points: " + sw1.ElapsedMilliseconds + " ms; metadata: "+sw2.ElapsedMilliseconds + " ms");
     
+//     GlobalData.musicPointStack = new List<List<MusicPoint>>();
+//     GlobalData.musicPointStack.Add(musicPoints);
     
     
-    // build terrainTree
-    SetLoadingScreenText("Creating terrain tree");
-    yield return null;
+    StartCoroutine(InitializeTerrainThread(musicPoints, true));
+  }
+  
+  IEnumerator InitializeTerrainThread(List<MusicPoint> musicPoints, bool descend){
+    //descend — if true, we go to lower levels. 
+    //if false, we restore a previous level from GlobalData
     
-    sw = Stopwatch.StartNew();
-    
-    terrainTree = new TerrainTree(10);
-    float[] mpbounds = GetMusicPointBounds(musicPoints);
-    float x_max, y_max, x_min, y_min;
-    x_max = mpbounds[0];
-    x_min = mpbounds[1];
-    y_max = mpbounds[2];
-    y_min = mpbounds[3];
-    
-    int x; int y;
-    
-    // calculate the difference between northmost/southmost and eastmost/westmost points
-    float range_x = x_max - x_min;
-    float range_y = y_max - y_min;
-    
-    // za računanje scaling faktorja bomo uporabili večjo razdalijo.
-    float range = range_x > range_y ? range_x : range_y;
-    float scaleFactor = TERRAIN_SIZE_MAX / range;
-    
-    // poiščimo sredino med ekstremi
-    float midpoint_x = (x_max + x_min)/2;
-    float midpoint_y = (x_max + y_min)/2;
-    
-    float terrain_middle = TERRAIN_SIZE_ACTUAL / 2.0f;
-    
-    int allNodes = musicPoints.Count;
-    int currentNode = 0;
-    
-    SetLoadingScreenText("Populating terrain tree", (currentNode + "/" + allNodes) );
-    yield return null;
-    
-    foreach (MusicPoint mp in musicPoints) {
-      mp.x = ((mp.x * scaleFactor) - midpoint_x + terrain_middle);
-      mp.y = ((mp.y * scaleFactor) - midpoint_y + terrain_middle);  // what? why? how? so many questions. | some meddling in TerrainTree fucked that up
-      terrainTree.InsertSong(mp);
-      
-      if(++currentNode % 5000 == 0){
-        SetLoadingScreenText("Populating terrain tree", (currentNode + "/" + allNodes) );
-        yield return null;
-      }
+    if(GlobalData.peakMarkers != null){
+      foreach(GameObject gg in GlobalData.peakMarkers)
+        Destroy(gg);
     }
+    GlobalData.peakMarkers = new List<GameObject>();
     
-    sw.Stop();
-    print("populated tree in " + sw.ElapsedMilliseconds + " ms");
+    Stopwatch sw = Stopwatch.StartNew();
+    Stopwatch sw1 = Stopwatch.StartNew();
     
-    
-    SetLoadingScreenText("Calculating averages");
-    yield return null;
-    
-    sw = Stopwatch.StartNew();
-    
-    terrainTree.CalculateAveragePosition();
-    
-    sw.Stop();
-    print("calculated averages in " + sw.ElapsedMilliseconds + " ms");
-    
-    
-    
-    
-    
-    
-    // time to sort elements by how close of the chunk average they are.
-    // We can actually cheat and approximate this because in the end, it doesn't really matter if we get exactly the 
-    // "average" song. Processing a great number of songs will take up time otherwise.
-    
-    // On the flipside, if a chunk has far less songs than square units (a 32x32 chunk will have 1024 spaces inside of it. If a
-    // chunk only has 100-something songs, "approximating" will take more time than just processing all the songs.
-    
-    SetLoadingScreenText("Slicing and dicing the world into chunks");
-    yield return null;
-    
-    sw = Stopwatch.StartNew();
-        
-    int numOfChunks = TERRAIN_SIZE_ACTUAL / CHUNK_SIZE;
-    int numChunksSq = numOfChunks*numOfChunks;
-    
-    GlobalData.chunks = new TerrainChunk[numOfChunks,numOfChunks];
-    
-    int globalPos_x, globalPos_y;
-    
-    for(int i = 0; i < numOfChunks; i++){
-      for(int j = 0; j < numOfChunks; j++){
-        GlobalData.chunks[i,j] = new TerrainChunk( (i*numOfChunks) + j );
-        
-        globalPos_x = i * CHUNK_SIZE;
-        globalPos_y = j * CHUNK_SIZE;
-        
-        List<MusicPoint> orderedSongs;
-        if( terrainTree.CountSongsInArea(CHUNK_LEVEL, globalPos_x, globalPos_y) < (CHUNK_SIZE * CHUNK_SIZE) ){
-          orderedSongs = TerrainChunk.GetOrderedChunkSongs(terrainTree, globalPos_x, globalPos_y);
-        }
-        else{
-          orderedSongs = TerrainChunk.GetOrderedChunkSongsApproximate(terrainTree, globalPos_x, globalPos_y);
-        }
-        
-        GlobalData.chunks[i,j].allSongs = orderedSongs;
-        // done
-      }
-      
-      SetLoadingScreenText("Slicing and dicing the world into chunks", ( (i*CHUNK_SIZE) + "/" + numChunksSq) );
+    if(descend){
+      print("--------------------------------------------------");
+      print("<InitializeTerrainThread>");
+      print("Initializing terrain from " + musicPoints.Count + " datapoints");
+      // build terrainTree
+      SetLoadingScreenText("Creating terrain tree");
       yield return null;
       
+      sw = Stopwatch.StartNew();
+      
+      terrainTree = new TerrainTree(10);
+      float[] mpbounds = GetMusicPointBounds(musicPoints);
+      float x_max, y_max, x_min, y_min;
+      x_max = mpbounds[0];
+      x_min = mpbounds[1];
+      y_max = mpbounds[2];
+      y_min = mpbounds[3];
+      
+      int x; int y;
+      
+      // calculate the difference between northmost/southmost and eastmost/westmost points
+      float range_x = x_max - x_min;
+      float range_y = y_max - y_min;
+      
+      // za računanje scaling faktorja bomo uporabili večjo razdalijo.
+      float range = range_x > range_y ? range_x : range_y;
+      float scaleFactor;
+      // največja dovoljena širina je različna v različnih primerih
+      if(musicPoints.Count < MINIMAL_NUMBER_OF_SONGS_FOR_TERRAIN)
+        scaleFactor = (float)TERRAIN_SIZE_ACTUAL / range;
+      else if(musicPoints.Count < MINI_TERRAIN_LIMIT)
+        scaleFactor = TERRAIN_SIZE_MINI / range;
+      else
+        scaleFactor = TERRAIN_SIZE_MAX / range;
+      
+      // poiščimo sredino med ekstremi
+      float midpoint_x = (x_max + x_min)/2;
+      float midpoint_y = (y_max + y_min)/2;
+      
+      float terrain_middle = (float)(TERRAIN_SIZE_ACTUAL >> 1);
+      
+      int allNodes = musicPoints.Count;
+      int currentNode = 0;
+      
+      
+      print("Music points are between x:" + x_min + "-" + x_max + "; y:" + y_min + "-" + y_max + "\nMiddle point is: " + midpoint_x + "," + midpoint_y+"\n\nTerrain middle: " + terrain_middle + "\nRange is this: " + range + "; scale factor is this: " + scaleFactor);
+      
+      SetLoadingScreenText("Populating terrain tree", (currentNode + "/" + allNodes) );
+      yield return null;
+      foreach (MusicPoint mp in musicPoints) {
+        mp.x = ((mp.x - midpoint_x) * scaleFactor + terrain_middle);
+        mp.y = ((mp.y - midpoint_y) * scaleFactor + terrain_middle);
+        terrainTree.InsertSong(mp);
+        
+        if(++currentNode % 5000 == 0){
+          SetLoadingScreenText("Populating terrain tree", (currentNode + "/" + allNodes) );
+          yield return null;
+        }
+      }
+      
+      sw.Stop();
+      print("populated tree in " + sw.ElapsedMilliseconds + " ms");
+      
+      
+      SetLoadingScreenText("Calculating averages");
+      yield return null;
+      
+      sw = Stopwatch.StartNew();
+      
+      terrainTree.CalculateAveragePosition();
+      
+      sw.Stop();
+      print("calculated averages in " + sw.ElapsedMilliseconds + " ms");
+      
+      
+      
+      
+      
+      // time to sort elements by how close of the chunk average they are.
+      // We can actually cheat and approximate this because in the end, it doesn't really matter if we get exactly the 
+      // "average" song. Processing a great number of songs will take up time otherwise.
+      
+      // On the flipside, if a chunk has far less songs than square units (a 32x32 chunk will have 1024 spaces inside of it. If a
+      // chunk only has 100-something songs, "approximating" will take more time than just processing all the songs.
+      
+      SetLoadingScreenText("Slicing and dicing the world into chunks");
+      yield return null;
+      
+      sw = Stopwatch.StartNew();
+          
+      int numOfChunks = TERRAIN_SIZE_ACTUAL / CHUNK_SIZE;
+      int numChunksSq = numOfChunks*numOfChunks;
+      
+      GlobalData.chunks = new TerrainChunk[numOfChunks,numOfChunks];
+      
+      int globalPos_x, globalPos_y;
+      
+      for(int i = 0; i < numOfChunks; i++){
+        for(int j = 0; j < numOfChunks; j++){
+          GlobalData.chunks[i,j] = new TerrainChunk( (i*numOfChunks) + j );
+          
+          globalPos_x = i * CHUNK_SIZE;
+          globalPos_y = j * CHUNK_SIZE;
+          
+          List<MusicPoint> orderedSongs;
+          orderedSongs = TerrainChunk.GetOrderedChunkSongs(terrainTree, globalPos_x, globalPos_y);
+          
+          GlobalData.chunks[i,j].allSongs = orderedSongs;
+          // done
+        }
+        
+        SetLoadingScreenText("Slicing and dicing the world into chunks", ( (i*CHUNK_SIZE) + "/" + numChunksSq) );
+        yield return null;
+        
+      }
+      
+      sw.Stop();
+      print("creating terrain chunks" + sw.ElapsedMilliseconds + " ms");    
+      
+      if(GlobalData.terrainChunkStack == null)
+        GlobalData.terrainChunkStack = new List<TerrainChunk[,]>();
+      if(GlobalData.terrainTreeStack == null)
+        GlobalData.terrainTreeStack = new List<TerrainTree>();
+      
+      // adding coordinates to descent history happens in keyctl!
+      
+      
+      GlobalData.terrainChunkStack.Add(GlobalData.chunks);
+      GlobalData.terrainTreeStack.Add(terrainTree);
+      GlobalData.terrainMagnificationLevel++;
+      print("terrainChunkStack size: " + GlobalData.terrainChunkStack.Count + "; magnification level: " + GlobalData.terrainMagnificationLevel);
+    }
+    else{
+      //we're going a level up
+      if(GlobalData.terrainMagnificationLevel <= 0){
+        yield break; // nope, we're on top level
+      }
+      SetLoadingScreenText("Restoring old terrain");
+      yield return null;
+      
+      // remove current stuff from the stack in global data
+      print("terrainChunk/terrainTreeStack size: " + GlobalData.terrainChunkStack.Count +"/"+ GlobalData.terrainTreeStack.Count + "; magnification level: " + GlobalData.terrainMagnificationLevel);
+      
+      GlobalData.terrainChunkStack.RemoveAt(GlobalData.terrainMagnificationLevel);
+      GlobalData.terrainTreeStack.RemoveAt(GlobalData.terrainMagnificationLevel);
+      
+      //switch levels:
+      GlobalData.terrainMagnificationLevel--;
+      
+      // restore the level we're rising up to:
+      GlobalData.chunks = GlobalData.terrainChunkStack[GlobalData.terrainMagnificationLevel];
+      terrainTree = GlobalData.terrainTreeStack[GlobalData.terrainMagnificationLevel];
+      
+      // remove music cubes (if they exist)
+      RemoveMusicCubes();
     }
     
     
-    sw.Stop();
-    print("creating terrain chunks" + sw.ElapsedMilliseconds + " ms");    
     
     // We can start fetching our music in the background, while terrain heightmap is being generated
+    // TODO: use actual players' coordinates
     BasicRadioCtl.Init();
-    Thread songFetching = new Thread(
-      () => BasicRadioCtl.LoadInitialTracks(1, 4, 512f, 512f)
-    );
+//     Thread songFetching = new Thread(
+//       () => BasicRadioCtl.LoadInitialTracks(1, 4, 512f, 512f)
+//     );
+//     
+//     songFetching.Start();
     
-    songFetching.Start();
+//     Thread gpmFetch = new Thread(
+//       () => BasicRadioCtl.LoadInitialTracksGpm(1,2, 518, 518));
+//     gpmFetch.Start();
     
-    SetLoadingScreenText("Asking Skadi to pls make those mountains", "(This gonna take long tho)"); 
-    yield return null;
-    
-    sw = Stopwatch.StartNew();
-    
-    
-    // Let's create terrain from the data we've read. This can take a while.
-    
-//     TerrainLodLevel l00 = new TerrainLodLevel(0, 1.0f);
-    TerrainLodLevel l0 = new TerrainLodLevel(1, 1.0f);
-    TerrainLodLevel l1 = new TerrainLodLevel(3, 1.0f);
-    TerrainLodLevel l2 = new TerrainLodLevel(4, 1.0f);
-    TerrainLodLevel l3 = new TerrainLodLevel(5, 0.50f);
-    
-    TerrainLodLevel[] levels = { /*l00,*/ l0, l1, l2, l3 };
-    
-//     TerrainLodLevel tl = new TerrainLodLevel(0,1.0f);
-//     TerrainLodLevel[] levels = {tl};
-    
-    
-    CreateTerrainHeightmap(terrainTree, levels);
-    
-    sw.Stop();
-    print("terrain built in " + sw.ElapsedMilliseconds + " ms");
-    
-    // add peak portals
-    
-    SetLoadingScreenText("Adding LOD portals (& initiating cache)"); 
-    yield return null;
-    
-//     CacheOptions.Init();
-//     foreach(Peak p in peaks){
-//       Instantiate(cube3,
-//                   new Vector3( (float)p.y, 
-//                                Terrain.activeTerrain.SampleHeight(new Vector3((float)p.y, (float)p.x, (float)p.x)),
-//                                (float)p.x
-//                   ),
-//                   Quaternion.identity
-//       );
-//     }
-      // testing the cache and downloading:
+    if( terrainTree.Count() >= MINIMAL_NUMBER_OF_SONGS_FOR_TERRAIN){
+      SetLoadingScreenText("Asking Skadi to pls make those mountains", "(This gonna take long tho)"); 
+      yield return null;
+      
+      sw = Stopwatch.StartNew();
       
       
-//       if( (CacheOptions.FindItemStatus(p.id) & ~CacheOptions.STATUS_7DIGITAL & CacheOptions.NOT_CACHED) != 0){
-//         CacheOptions.FetchItem(p.id, "7digital");
-        
-//       }
+      // Let's create terrain from the data we've read. This can take a while.
       
-//     }
-    
+  //     TerrainLodLevel l00 = new TerrainLodLevel(0, 1.0f);
+      TerrainLodLevel l0, l1, l2, l3;
+      
+      if(terrainTree.Count() > 15000){
+        l0 = new TerrainLodLevel(1, 1.0f);
+        l1 = new TerrainLodLevel(3, 1.0f);
+        l2 = new TerrainLodLevel(4, 1.0f);
+        l3 = new TerrainLodLevel(5, 0.50f);
+      }
+      else{  // a bit different rules for maps with smaller amounts of points
+        l0 = new TerrainLodLevel(2, 0.5f);
+        l1 = new TerrainLodLevel(4, 1.0f);
+        l2 = new TerrainLodLevel(5, 2.0f);
+        l3 = new TerrainLodLevel(6, 0.50f);
+      }
+      TerrainLodLevel[] levels = { /*l00,*/ l0, l1, l2, l3 };
+      
+      CreateTerrainHeightmap(terrainTree, levels);
+      
+      sw.Stop();
+      print("terrain built in " + sw.ElapsedMilliseconds + " ms");
+      
+      
+      // at this point, we have peaks. This means we're free to make a texture for our terrain:
+      
+      SetLoadingScreenText("Generating terrain texture"); 
+      yield return null;
+      
+      sw = Stopwatch.StartNew();
+      
+      Voronoish.FINISHED = false;
+      StartCoroutine(Voronoish.GenerateVoronoi(peaks, terrain, TERRAIN_SIZE_ACTUAL, 16));
+      
+      while(! Voronoish.FINISHED)
+        yield return null;
+      
+      sw.Stop();
+      print("terrain painted in " + sw.ElapsedMilliseconds + " ms");
+      // add peak and chunk markers
+      
+      SetLoadingScreenText("Adding peak and chunk markers"); 
+      yield return null;
+      
+      // add peaks (if they weren't added before)
+      if(! GlobalData.bottomLevel){
+        foreach(Peak p in peaks){
+          GameObject txt = Instantiate(peakIndicator_fpcam,
+                                       new Vector3( (float)p.x,
+                                                    terrain.SampleHeight( new Vector3( (float)p.x,
+                                                                                       0f,
+                                                                                       (float)p.y
+                                                                                     )
+                                                                        ) + 16f,
+                                                    (float)p.y
+                                       ),
+                                       Quaternion.identity
+          );
+          
+          Text peakName = txt.transform.FindChild("Canvas/PeakName").gameObject.GetComponent<Text>();
+          
+          GameObject pm = Instantiate(peakMarker,
+                                      new Vector3( (float)p.x,
+                                                    terrain.SampleHeight( new Vector3( (float)p.x,
+                                                                                      0f,
+                                                                                      (float)p.y
+                                                                                    )
+                                                    ),
+                                                    (float)p.y
+                                      ),
+                                      Quaternion.identity
+          );
+          GameObject tree = pm.transform.FindChild("Tree").gameObject;
+          tree.GetComponent<Renderer>().material.color = p.boxColor;
+
+          int chunk_x = p.x>>TerrainInit.CHUNK_LEVEL;
+          int chunk_y = p.y>>TerrainInit.CHUNK_LEVEL;
+          
+          List<MusicPoint> peakSongs = GlobalData.chunks[chunk_x,chunk_y].allSongs;
+          
+          if (peakSongs == null || peakSongs.Count == 0){
+            peakName.text = "Funny peak    <size=\"16\">there's something wrong with it</size>";
+          }
+          else{
+            string artist = peakSongs[0].meta.Split(new string[] {" - "}, 2, System.StringSplitOptions.None)[0];
+            peakName.text = artist + "'s peak";
+          }
+          
+          GameObject go = Instantiate(peakIndicator,
+                      new Vector3( (float)p.x, 
+                                  300f,  // todo: unhardcode
+                                  (float)p.y
+                      ),
+                      Quaternion.identity
+          );
+          go.name = "p" + p.id;
+          go.tag = "Map";
+          go.layer = LAYERS_MAP;
+          
+          GameObject ccube = go.transform.FindChild("PeakCube").gameObject;
+          
+          ccube.GetComponent<Renderer>().material.color = p.boxColor;
+          GlobalData.peakMarkers.Add(txt);
+          GlobalData.peakMarkers.Add(pm);
+          GlobalData.peakMarkers.Add(go);
+          
+        }
+      }
+
+      // Biggest marker will be given to chunks that contain 4x the songs an average chunk does.
+      
+  //     float maxChunkmarkerSize = ((float)(terrainTree.Count()<<2)) / ((float)(NUMBER_OF_CHUNKS*NUMBER_OF_CHUNKS));
+  //     float xzScaleFactor, yScaleFactor;
+  //     float relativeChunkSize;
+  //     
+  //     TerrainChunk chunk;
+  //     for(int i = 0; i < NUMBER_OF_CHUNKS; i++){
+  //       for(int j = 0; j < NUMBER_OF_CHUNKS; j++){
+  //         chunk = GlobalData.chunks[i,j];
+  //         if(chunk.allSongs.Count == 0)
+  //           continue;
+  //         
+  //         GameObject go = Instantiate(cube2,
+  //                                     new Vector3( (float)chunk.allSongs[0].x,
+  //                                                  Terrain.activeTerrain.SampleHeight(new Vector3( (float)chunk.allSongs[0].x,
+  //                                                                                                  0.0f,
+  //                                                                                                  (float)chunk.allSongs[0].y
+  //                                                                                     )),
+  //                                                  (float)chunk.allSongs[0].y
+  //                                     ),
+  //                                     Quaternion.identity
+  //         );
+  //     
+  //         relativeChunkSize = Mathf.Min( (((float)chunk.allSongs.Count) / maxChunkmarkerSize), 1.0f);
+  //         xzScaleFactor = 0.25f + ( relativeChunkSize ); 
+  //         yScaleFactor = 1.0f + (8.0f*relativeChunkSize);
+  //         
+  //         go.transform.localScale = new Vector3(xzScaleFactor, yScaleFactor, xzScaleFactor);
+  //       }
+  //     }
+      
+    }
+    else{
+      SetLoadingScreenText("Creating some flat lands for the final level", "(This gonna take long tho)"); 
+      yield return null;
+      
+      FlattenTerrain(0.15f);    
+      MakeMusicCubes(terrainTree);
+    }
     // wait for song downloads to complete
     
     Stopwatch tease = Stopwatch.StartNew();
     string teaseString = "";
     
-    while(songFetching.IsAlive){
-      if(tease.ElapsedMilliseconds > 80000)
-        teaseString = "   <size=\"12\"> — Any time now</size>";
-      else if(tease.ElapsedMilliseconds > 70000)
-        teaseString = "   <size=\"12\"> — No, Episle 3 doesn't count.</size>";
-      else if(tease.ElapsedMilliseconds > 60000)
-        teaseString = "   <size=\"12\"> — Was Half Life (2 episode) 3 released yet?</size>";
-      else if(tease.ElapsedMilliseconds > 50000)
-        teaseString = "   <size=\"12\"> — Bet you wish you had a decent internet</size>";
-      else if(tease.ElapsedMilliseconds > 40000)
-        teaseString = "   <size=\"12\"> — messing with my wifi. good. pick one, WotC</size>";
-      else if(tease.ElapsedMilliseconds > 30000)
-        teaseString = "   <size=\"12\"> — Wait can metallic dragons disturb my wifi?</size>";
-      else if(tease.ElapsedMilliseconds > 20000)
-        teaseString = "   <size=\"12\"> — Buckle up, get some coffee. This could be a long ride.</size>";
-      else if(tease.ElapsedMilliseconds > 10000)
-        teaseString = "   <size=\"12\"> — And you thought terrain step took ages</size>";
-      
-      SetLoadingScreenText("Downloading initial songs", (GlobalData.songFetching_completed + "/" + GlobalData.songFetching_total + " downloaded" + teaseString));
-      yield return null;
-    }
+//     while(songFetching.IsAlive || gpmFetch.IsAlive){
+//       if(tease.ElapsedMilliseconds > 80000)
+//         teaseString = "   <size=\"12\"> — Any time now</size>";
+//       else if(tease.ElapsedMilliseconds > 70000)
+//         teaseString = "   <size=\"12\"> — No, Episle 3 doesn't count.</size>";
+//       else if(tease.ElapsedMilliseconds > 60000)
+//         teaseString = "   <size=\"12\"> — Was Half Life (2 episode) 3 released yet?</size>";
+//       else if(tease.ElapsedMilliseconds > 50000)
+//         teaseString = "   <size=\"12\"> — Bet you wish you had a decent internet</size>";
+//       else if(tease.ElapsedMilliseconds > 40000)
+//         teaseString = "   <size=\"12\"> — messing with my wifi. good. pick one, WotC</size>";
+//       else if(tease.ElapsedMilliseconds > 30000)
+//         teaseString = "   <size=\"12\"> — Wait can metallic dragons disturb my wifi?</size>";
+//       else if(tease.ElapsedMilliseconds > 20000)
+//         teaseString = "   <size=\"12\"> — Buckle up, get some coffee. This could be a long ride.</size>";
+//       else if(tease.ElapsedMilliseconds > 10000)
+//         teaseString = "   <size=\"12\"> — And you thought terrain step took ages</size>";
+//       
+//       SetLoadingScreenText("Downloading initial songs", (GlobalData.songFetching_completed + "/" + GlobalData.songFetching_total + " downloaded" + teaseString));
+//       yield return null;
+//     }
     
-    BasicRadioCtl.playerHasControl = true;
     // place us in the middle of the map 
     
     
     progresstxt.text = "Placing PC";
     yield return null;
     
-    float playerInitialPosX = 500.0f;
-    float playerInitialPosZ = 500.0f;
+    float player_x, player_y, player_height;
     
-    float playerInitialPosY = terrain.SampleHeight(new Vector3(playerInitialPosX, playerInitialPosX, playerInitialPosZ)) + 2f;
+    if(descend){
+      player_x = PLAYER_INITIAL_X;
+      player_y = PLAYER_INITIAL_Y;
+    }
+    else{
+      if(GlobalData.descentHistory_x.Count <= 0){
+        player_x = PLAYER_INITIAL_X;
+        player_y = PLAYER_INITIAL_Y;
+      }
+      else{
+        player_x = GlobalData.descentHistory_x[GlobalData.descentHistory_x.Count - 1];
+        player_y = GlobalData.descentHistory_y[GlobalData.descentHistory_y.Count - 1];
+        
+        GlobalData.descentHistory_x.RemoveAt(GlobalData.descentHistory_x.Count - 1);
+        GlobalData.descentHistory_y.RemoveAt(GlobalData.descentHistory_y.Count - 1);
+      }
+    }
     
-//     Camera.main.transform.position = new Vector3(playerInitialPosX, playerInitialPosY, playerInitialPosZ);
-    
+    player_height = terrain.SampleHeight(new Vector3(player_x, 0f, player_y)) + 2f;
+    player.transform.position = new Vector3(player_x, player_height, player_y);
     
     
     // fake delay
@@ -337,9 +574,24 @@ public class TerrainInit : MonoBehaviour {
     loadScreenProgressMessage = "Done lol";
     
     loadingScreen.SetActive(false);
-//     MakeDebugCubeTerrain(terrainTree);
+    menuCam.SetActive(false);
+    player.SetActive(true);
+    GlobalData.playerHasControl = true;
   }
   
+  void FlattenTerrain(float height){
+    float[,] heightmap = new float[TERRAIN_SIZE_ACTUAL, TERRAIN_SIZE_ACTUAL];
+    
+    // todo: proper height
+    
+    for(int i = 0; i < TERRAIN_SIZE_ACTUAL; i++)
+      for(int j = 0; j < TERRAIN_SIZE_ACTUAL; j++)
+        heightmap_raw[i,j] = height;
+    
+      
+      
+    terrain.terrainData.SetHeights(0,0,heightmap);
+  }
   
   void CreateTerrainHeightmap(TerrainTree terrainTree, TerrainLodLevel[] terrainLods){
     
@@ -353,53 +605,13 @@ public class TerrainInit : MonoBehaviour {
       for(int j = 0; j < TERRAIN_SIZE_ACTUAL; j++)
         heightmap_raw[i,j] = 0.0f;
     
-//     for(int i = 0; i < terrainLods.Length; i++){
-//       // retreive heightmap from different levels of detail:
-//       float[,] tmpTerrain = terrainTree.GenerateHeightMap(terrainLods[i].depth, false);
-//       
-//       // use bicubic to resize heightmap to terrain resolution
-//       float[,] tmpTerrainNative = BicubicInterpolate(tmpTerrain,
-//                                                      TERRAIN_SIZE_ACTUAL,
-//                                                      TERRAIN_SIZE_ACTUAL,
-//                                                      terrainLods[i].multiplier
-//                                                     );
-//       
-//       // add interpolated terrain to raw heightmap, keep track of max height while we're at it 
-//       // so we can use it for scaling later
-//       
-//       for(int l = 0; l < TERRAIN_SIZE_ACTUAL; l++){
-//         for(int j = 0; j < TERRAIN_SIZE_ACTUAL; j++){
-//           heightmap_raw[l,j] += tmpTerrainNative[l,j];
-//           
-//           if(heightmap_raw[l,j] > observed_max_height)  // verjetno se odvečne primerjave na tem mestu bolj splačajo kot
-//             observed_max_height = heightmap_raw[l,j];   // pa, če bi jih izvedli v ločeni zanki. (nekej nekej cpu cache)
-//         }
-//       }
-//     }
-//     
-//     
-//     
-//     // calculate scaling factor for our hills to reach the desired height:
-//     scaleFactor = TERRAIN_MAX_HEIGHT / observed_max_height;
-//     
-//     // Unity requires that heightmap is normalized / on the interval [0,1]
-//     scaleFactor /= TERRAIN_RESOLUTION;
-//     
-//     // Now we create ourselves a new heightmap
-//     float[,] heightmap = new float[TERRAIN_SIZE_ACTUAL, TERRAIN_SIZE_ACTUAL];
-//     for(int i = 0; i < TERRAIN_SIZE_ACTUAL ; i++){
-//       for(int j = 0; j < TERRAIN_SIZE_ACTUAL ; j++){
-//         heightmap[i,j] = heightmap_raw[i,j] * scaleFactor;
-//       }
-//     }
-    
     for(int lod = 0; lod < terrainLods.Length; lod++){
       //First: get the heightmap of the current LOD!
       float[,] tmpTerrain = terrainTree.GenerateHeightMap(terrainLods[lod].depth, false);
       
       // Scaling.ScaleImage wants one-dimensional array? On [0,1]?
       
-      // we need to get the max value and normalize everything:
+      // we need to get the max value and normalize everything
       float observedMax = 0.0f;
       
       for(int i = 0; i < tmpTerrain.GetLength(0) ; i++)
@@ -445,19 +657,34 @@ public class TerrainInit : MonoBehaviour {
       
       // if we're on peak discovery lod, we should find peaks
       
-//       if(lod == 3){ //todo: compare by actual LOD vs PEAK_DISCOVERY_LOD
-//         peaks = FindPeaks(heightmap_raw);
-//       }
+      if(lod == 3){ //todo: compare by actual LOD vs PEAK_DISCOVERY_LOD
+        peaks = FindPeaks(heightmap_raw);
+      }
     }
     
     
     // we need to find a new highest point and make all points to fit on [0,1] interval.
     // because all of the intervals we were adding together were between [0,1], the maximum possible
     // height is the sum of all multipliers.
-    for(int i = 0; i < heightmap_raw.GetLength(0) ; i++)
-      for(int j = 0; j < heightmap_raw.GetLength(1) ; j++)
+    
+    // we're also clipping anomalies — "observed_max_height" will clip away top 5% 
+    int clip = (int)( (float)(TERRAIN_SIZE_ACTUAL * TERRAIN_SIZE_ACTUAL) * TERRAIN_MAX_HEIGHT_CLIP);
+    
+    PriorityQueueF<float> maxObservedClipping = new PriorityQueueF<float>("max");
+    
+    for(int i = 0; i < heightmap_raw.GetLength(0) ; i++){
+      for(int j = 0; j < heightmap_raw.GetLength(1) ; j++){
+        maxObservedClipping.Enqueue(heightmap_raw[i,j],heightmap_raw[i,j]);
         if(observed_max_height < heightmap_raw[i,j])
           observed_max_height = heightmap_raw[i,j];
+      }
+    }
+    
+    print("<TerrainInit::CreateTerrainHeightmap> Classical observed max height is " + observed_max_height + " while PQF-blessed max height is " + maxObservedClipping.ElementAt(clip - 1) + ". Number of elements higher of max height is " + clip + " and our queue contains " + maxObservedClipping.Count() + " elements.");
+    
+    // let's not do clipping on small terrains
+    if(terrainTree.Count() > MINI_TERRAIN_LIMIT)
+      observed_max_height = maxObservedClipping.ElementAt(clip -1);
     
     scaleFactor = TERRAIN_MAX_HEIGHT / observed_max_height;
     
@@ -468,7 +695,7 @@ public class TerrainInit : MonoBehaviour {
     float[,] heightmap = new float[TERRAIN_SIZE_ACTUAL, TERRAIN_SIZE_ACTUAL];
     for(int i = 0; i < TERRAIN_SIZE_ACTUAL ; i++){
       for(int j = 0; j < TERRAIN_SIZE_ACTUAL ; j++){
-        heightmap[i,j] = heightmap_raw[i,j] * scaleFactor;
+        heightmap[j,i] = heightmap_raw[i,j] * scaleFactor; // Terrain looks at array a bit differently than we do, flipping x and y
       }
     }
     
@@ -479,7 +706,71 @@ public class TerrainInit : MonoBehaviour {
     
   }
   
+  void MakeMusicCubes(TerrainTree tt){
+    float[,] songCount = tt.GenerateHeightMap(SONG_GROUPING_CHUNK_LEVEL, false);
+    
+    string artist, title, andmore;
+    List<MusicPoint> allSongs;
+    
+    if(GlobalData.songObjects == null)
+      GlobalData.songObjects = new List<GameObject>();
+    
+    float boxOffset = ((float)(1 << SONG_GROUPING_CHUNK_LEVEL - 1));
+    
+    int iShifted, jShifted;
+    
+    for(int i = 0; i < songCount.GetLength(0); i++){
+      for(int j = 0; j < songCount.GetLength(1); j++){
+        if(songCount[i,j] > 0){
+          
+          iShifted = i << SONG_GROUPING_CHUNK_LEVEL;
+          jShifted = j << SONG_GROUPING_CHUNK_LEVEL;
+          
+          allSongs = tt.GetSongsInArea(SONG_GROUPING_CHUNK_LEVEL, iShifted, jShifted);
+          
+          Vector3 boxPosition = new Vector3((float)(iShifted) + boxOffset, 1.0f, (float)(jShifted) + boxOffset);
+          
+          Peak p = new Peak(0, iShifted, jShifted);
+          GameObject go = Instantiate( songMarker,
+                                       boxPosition,
+                                       Quaternion.identity);
+          go.transform.localScale = new Vector3(8.0f, 8f*songCount[i,j], 8.0f);
+          go.GetComponent<Renderer>().material.color = p.boxColor;
+          GlobalData.songObjects.Add(go);
+          
+          boxPosition.y = 33f;
+          
+          GameObject mapMarker = Instantiate( songMarkerMapIndicator,
+                                              boxPosition,
+                                              Quaternion.identity);
+          
+          GameObject ccube = mapMarker.transform.FindChild("PeakCube").gameObject;
+          ccube.GetComponent<Renderer>().material.color = p.boxColor;
+          
+          SongItemData sid = (SongItemData) mapMarker.GetComponent(typeof(SongItemData));
+          sid.meta = allSongs[0].meta;
+          sid.gpmId = allSongs.Count > 1 ? ("... and " + (allSongs.Count - 1) + " more") : "";
+          
+          GlobalData.songObjects.Add(mapMarker);
+        }
+      }      
+    }
+    
+  }
+  
+  void RemoveMusicCubes(){
+    if(GlobalData.songObjects == null || GlobalData.songObjects.Count == 0)
+      return; // nothing to remove
+    
+    foreach(GameObject gg in GlobalData.songObjects){
+      Destroy(gg);
+    }
+    
+    GlobalData.songObjects = new List<GameObject>();  // never existed
+  }
+  
   void MakeDebugCubeTerrain(TerrainTree terrainTree){
+    terrainTree.CalculateAverageHeight();
     float[,] terrain1 = terrainTree.GenerateHeightMap(5,true);
     float[,] terrain2 = terrainTree.GenerateHeightMap(3,true);
     float[,] terrain3 = terrainTree.GenerateHeightMap(2,true);
@@ -491,7 +782,7 @@ public class TerrainInit : MonoBehaviour {
     t3w = terrain3.GetLength(0);
     t4w = terrain4.GetLength(0);
     
-    float cubeScaleFactor = TERRAIN_SIZE_ACTUAL / (float)t1w;
+    float cubeScaleFactor = TERRAIN_SIZE_ACTUAL / t1w;
     float cubeScaleFactorHalf = cubeScaleFactor / 2.0f;
     
     print("cube scale factors:");
@@ -565,12 +856,34 @@ public class TerrainInit : MonoBehaviour {
     }    
   }
   
+  void MakeDebugMusicPoints(List<MusicPoint> mplist){
+    int[,] terrain = new int[TERRAIN_SIZE_ACTUAL,TERRAIN_SIZE_ACTUAL];
+    for(int i = 0; i < TERRAIN_SIZE_ACTUAL; i++)
+      for(int j = 0; j < TERRAIN_SIZE_ACTUAL; j++)
+        terrain[i,j] = 0;
+    
+    int x, y;
+    foreach(MusicPoint mp in mplist){
+      x = (int)mp.x;
+      y = (int)mp.y;
+      
+      terrain[x,y]++;
+      
+      GameObject go = Instantiate(cube4,
+                                  new Vector3( (float)x,
+                                                terrain[x,y],
+                                                (float)y ),
+                                  Quaternion.identity);
+      go.name = mp.meta;
+    }
+  }
+  
   List<Peak> FindPeaks(float[,] map){
     Stopwatch sw = Stopwatch.StartNew();
     
     int FP_RADIUS = 5;
     int FP_ITERATIONS = 3;
-    int FP_EXCLUSION_ZONE = 66; // no duplo peaks within this distance. 
+    int FP_EXCLUSION_ZONE = 96; // no duplo peaks within this distance. 
     
     List<Peak> peaks = new List<Peak>(); 
     int nextId = 0;
@@ -580,7 +893,8 @@ public class TerrainInit : MonoBehaviour {
     
     bool tooClose;
     
-    float[,] smoothMap = Blur.FastBlur(map, FP_RADIUS, FP_ITERATIONS); 
+//     float[,] smoothMap = Blur.FastBlur(map, FP_RADIUS, FP_ITERATIONS); 
+    float[,] smoothMap = map; // we shouldn't get any different results if we just cut blurring out
     
     PriorityQueueF<Peak> peakQueue = new PriorityQueueF<Peak>();
     
@@ -595,11 +909,14 @@ public class TerrainInit : MonoBehaviour {
           // Let's add it to our super duper priority queue, so we can filter out unwanted peaks later
           // down the line.
           
-          // fun fact: unity's terrain's coordinates disagree with our interpretation of the terrain, 
-          // which means we need to switch our coordinates
+          // but we still exclude any peaks that aren't tall enough right from the get-go
+          if(smoothMap[i,j] < TerrainSettings.LOWEST_ALLOWED_PEAK_HEIGHT)
+            continue;
+          
           peakQueue.Enqueue(
                       new Peak(nextId++, i, j),
-                      terrain.SampleHeight(new Vector3(j, 0.0f, i))
+//                       terrain.SampleHeight(new Vector3(j, 0.0f, i))
+                      smoothMap[i,j]
                     );
         }
       }
@@ -622,201 +939,20 @@ public class TerrainInit : MonoBehaviour {
         }
       }
       
-      if(! tooClose)
+      if(! tooClose){
+        candidate.BuildRelevantSongs(terrainTree);
+        //candidate.GenreFetchFirst();
         peaks.Add(candidate);
+        
+      }
       
     }
     
     sw.Stop();
     print("Found peaks in " + sw.ElapsedMilliseconds + " ms");
-    
+    GlobalData.peaks = peaks;
     return peaks;
   }
-  
-  
-  
-  /***********************************************************************************************************/
-  //BEGIN interpolation
-  //TODO — move to its own class
-  static float[,] BicubicInterpolate(float[,] inmap, int width, int height){
-    return BicubicInterpolate(inmap, width, height, 1.0f);
-  }
-  
-  static float[,] BicubicInterpolate(float[,] inmap, int width, int height, float multiplier){
-    float[,] interpolated = new float[width,height];
-    
-    int org_width = inmap.GetLength(0);
-    int org_height = inmap.GetLength(1);
-    
-    float org_x, org_y;
-    int org_x_index, org_y_index;
-    float offset_x, offset_y; 
-    
-    float step_x, step_y;
-    step_x = ((float)org_width) / ((float)width);
-    step_y = ((float)org_height) / ((float)height);
-    
-    float x0, x1, x2, x3;
-    int low_x, high_x, high_x_2;
-    int low_y, high_y, high_y_2;
-    
-    
-    
-    // We need to zero-pad the inmap before doing anything, so interpolation works properly without index-out-of-bounds
-    // exceptions we'd otherwise get
-    float[,] tmpin = new float[org_width+3, org_height+3];
-    
-    // Step 1: copy all the values from the old array
-    for(int i = 0; i < org_width; i++){
-      for(int j = 0; j < org_height; j++){
-        tmpin[i+1,j+1] = inmap[i,j];
-      }
-    }
-    
-    // Step 2: add zeroes to the first, last and second-last column and row
-    int lastCol = org_width + 2;
-    int secondLastCol = org_width + 1;
-    
-    int lastRow = org_height + 2;
-    int secondLastRow = org_height + 1;
-    
-    for(int i = 0; i < tmpin.GetLength(0); i++){
-      tmpin[i,0] = tmpin[i,0];
-      tmpin[i,lastRow] = tmpin[i,secondLastRow-1];
-      tmpin[i,secondLastRow] = tmpin[i,lastRow];
-    }
-    for(int i = 0; i < tmpin.GetLength(1); i++){
-      tmpin[0,i] = tmpin[1,i];
-      tmpin[lastCol,i] = tmpin[secondLastCol-1,i];
-      tmpin[secondLastCol,i] = tmpin[lastCol, i];
-    }
-    
-    inmap = null;
-    inmap = tmpin;
-    
-    // Step 3: actually do the interpolation
-    
-    for(int new_x = 0; new_x < width; new_x++){
-      org_x = new_x * step_x;
-      
-      org_x_index = (int)Mathf.Floor(org_x) + 1;
-      offset_x = org_x % 1;
-      
-      
-      low_x    = org_x_index - 1;
-      high_x   = org_x_index + 1; 
-      high_x_2 = org_x_index + 2;
-      
-      for(int new_y = 0; new_y < height; new_y++){
-        org_y = new_y * step_y;
-        org_y_index = (int)Mathf.Floor(org_y) + 1;
-        offset_y = org_y % 1;
-        
-        low_y    = org_y_index - 1;
-        high_y   = org_y_index + 1;
-        high_y_2 = org_y_index + 2;
-        
-//         print("here are the limits: " + inmap.GetLength(0) + "," inmap.GetLength(1) );
-//         print("here are the values: " 
-        try{
-          x0 = BicubicInterpolateValues(inmap[low_x,       low_y],
-                                        inmap[org_x_index, low_y], 
-                                        inmap[high_x,      low_y], 
-                                        inmap[high_x_2,    low_y],
-                                        offset_x
-                                      );
-          x1 = BicubicInterpolateValues(inmap[low_x,       org_y_index],
-                                        inmap[org_x_index, org_y_index],
-                                        inmap[high_x,      org_y_index],
-                                        inmap[high_x_2,    org_y_index],
-                                        offset_x
-                                      );
-          x2 = BicubicInterpolateValues(inmap[low_x,       high_y],
-                                        inmap[org_x_index, high_y],
-                                        inmap[high_x,      high_y],
-                                        inmap[high_x_2,    high_y],
-                                        offset_x
-                                      );
-          x3 = BicubicInterpolateValues(inmap[low_x,       high_y_2],
-                                        inmap[org_x_index, high_y_2],
-                                        inmap[high_x,      high_x_2],
-                                        inmap[high_x_2,    high_y_2],
-                                        offset_x
-                                      );
-          interpolated[new_x,new_y] = BicubicInterpolateValues( x0, x1, x2, x3, offset_y ) * multiplier;
-//           interpolated[new_x,new_y] = NearestNeighbour(x1,x2,org_y % 1) * multiplier;
-//           interpolated[new_x,new_y] = Linear(x2,x3,org_y % 1) * multiplier;
-//           interpolated[new_x, new_y] = CosInterpolate(x2,x3,org_y % 1) * multiplier;
-//           interpolated[new_x, new_y] = CosInterpolate(CosInterpolate(inmap[org_x_index, org_y_index],
-//                                                                      inmap[org_x_index, high_y],
-//                                                                      org_y % 1
-//                                                                      ),
-//                                                       CosInterpolate(inmap[high_x, org_y_index],
-//                                                                      inmap[high_x, high_y],
-//                                                                      org_y % 1
-//                                                                     ),
-//                                                       org_x % 1
-//                                                      ) * multiplier;
-        }catch (Exception e){
-          print("Index out of range. Our range is this: [" + inmap.GetLength(0) + "," + inmap.GetLength(1) + "]" +
-                "\nour values are:\n" + 
-                "                                  low: [" + low_x + "," + low_y + "]\n" +
-                "                            org_index: [" + org_x_index + "," + org_y_index + "]\n" +
-                "                                 high: [" + high_x + "," + high_y + "]\n" + 
-                "                               high_2: [" + high_x_2 + "," + high_y_2 + "]\n"
-          );
-        }
-      }
-    }
-    
-    return interpolated;
-  }
-  
-  static float NearestNeighbour(float x0, float x1, float offset){
-    return (offset < 0.5f) ? x0 : x1;
-  }
-  static float Linear(float x0, float x1, float offset){
-    return (1.0f-offset)*x0 + offset*x1;
-  }
-  static float CosInterpolate(float x0, float x1, float offset){
-    
-    float tmp = (1-Mathf.Cos(offset * Mathf.PI))/2;
-    return x0 * (1-tmp) + x1 * tmp;
-  }
-  
-  static float BicubicInterpolateValues(float x0, float x1, float x2, float x3, float offset){
-    // source: http://paulbourke.net/miscellaneous/interpolation/
-    //         http://www.paulinternet.nl/?page=bicubic
-    float a0, a1, a2, a3, offsetsq, interpolated;
-    
-    offsetsq = offset*offset;
-//     a0 = x3 - x2 - x0 + x1;
-//     a1 = x0 - x1 - a0;
-//     a2 = x2 - x0;
-//     a3 = x1;
-    
-    a0 = (-0.5f * x0) + (1.5f * x1) - (1.5f * x2) + (0.5f * x3);
-    a1 = x0 - (2.5f * x1) + (2.0f * x2) - (0.5f * x3);
-    a2 = (-0.5f * x0) + (0.5f * x2);
-    a3 = x1;
-    
-    interpolated = (a0 * offset * offsetsq) + (a1 * offsetsq) + (a2 * offset) + a3;
-    
-    return interpolated;
-    
-//     a0 = 3.0f * (x1 - x2) + x3 - x1;
-//     a1 = 2.0f * x0 - 5.0f*x1 + 4.0f*x2 - x3 + offset*a0;
-//     a2 = x2 - x0 + offset*a1;
-//     a3 = x1 + 0.5f * offset * a2;
-//     
-//     return a3;
-//     
-//     return x1 + 0.5f * offset*(x2 - x0 + offset*(2.0f*x0 - 5.0f*x1 + 4.0f*x2 - x3 + offset*(3.0f*(x1 - x2) + x3 - x0)));
-  }
-  //END interpolation
-  
-  
-  /***********************************************************************************************************/
   
   float[] GetMusicPointBounds(List<MusicPoint> musicPoints){
     // returns an array containing 4 values: 
@@ -849,9 +985,6 @@ public class TerrainInit : MonoBehaviour {
     return new float[] { x_max, x_min, y_max, y_min };
   }
   
-  // 
-  
-  
   // Use this for initialization
   void Start () {
     terrain = GetComponent<Terrain>();
@@ -868,17 +1001,14 @@ public class TerrainInit : MonoBehaviour {
     foo.Start();
     
     mainMenu = GameObject.Find("MainMenuCanvas");
+    
+    GpmConf.InitGpm();
   }
   
   // Update is called once per frame
   void Update () {
     if(loadingScreen.activeSelf)
       progresstxt.text = loadScreenProgressMessage;
-  }
-  
-  // todo: move this to a separate script
-  void LateUpdate() {
-    Cursor.visible = true;
   }
   
 }

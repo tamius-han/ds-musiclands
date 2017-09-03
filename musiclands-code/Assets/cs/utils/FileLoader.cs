@@ -49,11 +49,9 @@ public class FileLoader : MonoBehaviour{
   
   public static void AddMusicMetadata(List<MusicPoint> musicPoints, string fileIn){
     print("metadata file: " + fileIn);
-    try{
+//     try{
       string line;
       StreamReader sr = new StreamReader(fileIn, Encoding.Default);
-      
-      Console.WriteLine("metadata file: ", fileIn);
       
       int counter = 0;
       
@@ -77,10 +75,11 @@ public class FileLoader : MonoBehaviour{
           line = sr.ReadLine();
         }
       }
-    }
-    catch(Exception e){
-      Console.WriteLine("Something went wrong. Trace:\n{0}\n", e.Message);
-    }
+      Debug.Log("[FileLoader::AddMusicMetadata] meta added. Total: " + counter + "/" + musicPoints.Count);
+//     }
+//     catch(Exception e){
+//       Console.WriteLine("Something went wrong. Trace:\n{0}\n", e.Message);
+//     }
   }
   
   public static List<MusicPoint> ReadMusicPointsBin(string fileIn){

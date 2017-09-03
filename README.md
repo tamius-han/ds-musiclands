@@ -8,7 +8,8 @@ Songs start playing when you enter a chunk. Since they're not pre-downloaded —
 
 ## Requirements to start rolling
 
-* Unity3D 
+* Unity3D
+* Unity3D Standard Assets (from unity store — not provided here)
 * python2 (needs to be in path)
 * following python libraries: gpmusicapi, requests, rpyc, (todo—see 7digital dependencies) — use `pip install` to install them.
 * ffmpeg (needs to be in path)

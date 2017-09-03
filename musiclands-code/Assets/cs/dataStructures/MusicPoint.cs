@@ -6,12 +6,17 @@ public class MusicPoint {
   public float x;
   public float y;
   public int  id;
-  private string meta;
+  public string meta;
+  public string gpmId = "";
+
   
-  public string artist;
-  public string title;
-  public string album;
-  public string genre;
+  public MusicPoint(){
+    this.x = -1f;
+    this.y = -1f;
+    this.id = -1;
+    this.meta = "";
+    this.gpmId = "";
+  }
   
   public MusicPoint(int id, float x, float y){
     this.x = x;

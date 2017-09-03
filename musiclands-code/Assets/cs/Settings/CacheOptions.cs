@@ -42,7 +42,8 @@ public class CacheOptions : MonoBehaviour {
   public static readonly int GPM_STREAMING = 128;      // we are currently streaming that song
   public static readonly int GPM_CACHED = 256;         // full song is in our cache
   public static readonly int GPM_NOT_AVAILABLE = 512;  // GPM doesn't have it
-  public static readonly int STATUS_GPM = 992;         // bits containing GPM statuses
+  public static readonly int GPM_ERROR = 1024;         // there's a fault with GPM
+  public static readonly int STATUS_GPM = 2016;        // bits containing GPM statuses
   
   /**
    *    _________________________
@@ -54,9 +55,18 @@ public class CacheOptions : MonoBehaviour {
   
   static object _writeLock = new object();              // UpdateCachedItems needs to be threadsafe when writing to file 
   static object _cacheLock = new object();              // when adding new cache entry too, actually (but not when modifying)
+  static object _writeLock_gpm = new object();          // GPM has a separate lock
+  static object _gpm_threadcounter_lock = new object();
+  static object _gpm_nonfailed_lock = new object();
   
   // File for saving unavailable tracks permanently/until manual deletion
   static string PERMANENT_FILE_UNAVAILABLE = Application.dataPath + "/Resources/store/cache_unavailable";
+  static string PERMANENT_FILE_UNAVAILABLE_GPM = Application.dataPath + "/Resources/store/gpm_unavailable";
+  
+  // how many concurrent search queries can we send GPM's way
+  static int GPM_CONCURRED_QUERIES = 3;
+  static int gpmThreadCounter;
+  static int gpmNonfailedLimit;
   
   // we keep track of which songs we're downloading and which songs are downloaded via dictionary.
   static Dictionary<int, CachedInfo> cachedItems;
@@ -64,6 +74,8 @@ public class CacheOptions : MonoBehaviour {
   // this is a 401 counter. When this value reaches zero, we don't attempt any downloads from 7digital until reset manually
   static int fuse_7digital = 5;
   static readonly int fuse_7digital_default = 5; // default number of 401 retries
+  
+  static int fuse_gpmChunkTries = 16;            // will stop trying to fetch songs from chunk after this many failures.
   
   
   static string cachedir = "";
@@ -86,13 +98,34 @@ public class CacheOptions : MonoBehaviour {
     }
   }
   
+  static void AppendUnavailableItemGpm(int id){
+    lock(_writeLock_gpm){
+      using (BinaryWriter writer = new BinaryWriter(File.Open(PERMANENT_FILE_UNAVAILABLE_GPM, FileMode.Append))){
+        writer.Write(id);
+      }
+    }
+  }
+  
   static void LoadUnavailableItems(){  // loads ids that are unavailable
+    
+    // unavailable via 7digital
     if(File.Exists(PERMANENT_FILE_UNAVAILABLE)){
       int id;
       using (BinaryReader reader = new BinaryReader(File.Open(PERMANENT_FILE_UNAVAILABLE, FileMode.Open))){
         while(reader.BaseStream.Position != reader.BaseStream.Length){
           id = reader.ReadInt32();
           InitiateCachedItems(id, NOT_AVAILABLE, STATUS_7DIGITAL);
+        }
+      }
+    }
+    
+    // unavailable via gpm
+    if(File.Exists(PERMANENT_FILE_UNAVAILABLE_GPM)){
+      int id;
+      using (BinaryReader reader = new BinaryReader(File.Open(PERMANENT_FILE_UNAVAILABLE_GPM, FileMode.Open))){
+        while(reader.BaseStream.Position != reader.BaseStream.Length){
+          id = reader.ReadInt32();
+          InitiateCachedItems(id, GPM_NOT_AVAILABLE, STATUS_GPM);
         }
       }
     }
@@ -106,7 +139,8 @@ public class CacheOptions : MonoBehaviour {
         "7digital-dl.py", (
           "--key " + key.key +
           " --secret " + key.secret +
-          " -s " + id
+          " -s " + id +
+          " --dir " + GlobalData.cachedir + "/clips"
         )
       );
       
@@ -131,8 +165,13 @@ public class CacheOptions : MonoBehaviour {
   
   
   static void UpdateCachedItems(int id, int status, int status_provider){
-    if(status == NOT_AVAILABLE){
+    if(status == NOT_AVAILABLE && status_provider == STATUS_7DIGITAL){
       AppendUnavailableItem(id);
+    }
+    else if(status == GPM_NOT_AVAILABLE && status_provider == STATUS_GPM){
+      // doesn't work if both GPM_NOT_AVAILABLE and GPM_ERROR bits are set
+      // which is proper behaviour
+      AppendUnavailableItemGpm(id);
     }
     
     if(cachedItems.ContainsKey(id)){    
@@ -179,7 +218,9 @@ public class CacheOptions : MonoBehaviour {
     
     
     cachedItems = new Dictionary<int,CachedInfo>();
-    cachedir = Application.dataPath + "/Resources/cache";
+    cachedir = Application.persistentDataPath + "/cache";
+    
+    print("CacheInit:::::: cachedir is this: " + cachedir);
     
     GlobalData.cachedir = cachedir;
     
@@ -188,6 +229,9 @@ public class CacheOptions : MonoBehaviour {
     
     if(! Directory.Exists(cachedir + "/clips"))
       Directory.CreateDirectory(cachedir + "/clips");
+    
+    if(! Directory.Exists(cachedir + "/full"))
+      Directory.CreateDirectory(cachedir + "/full");
     
     LoadUnavailableItems();
     
@@ -209,7 +253,7 @@ public class CacheOptions : MonoBehaviour {
   }
   
   public static void ClearCache(){
-    string cachedir = Application.dataPath + "/Resources/cache";
+    string cachedir = GlobalData.cachedir;
     
     if( Directory.Exists(cachedir) ){
       Directory.Delete(cachedir, true);
@@ -219,6 +263,8 @@ public class CacheOptions : MonoBehaviour {
     Directory.CreateDirectory(cachedir + "/dl");
     Directory.CreateDirectory(cachedir + "/clips");
     Directory.CreateDirectory(cachedir + "/full");
+    
+    CacheOptions.Init();
   }
   
   public static void DeleteCacheItem(int id){
@@ -272,13 +318,68 @@ public class CacheOptions : MonoBehaviour {
   
   }
   
-//   static int maxMessages = 50;
+  public static string FindGpm(MusicPoint mp){
+    
+    string gpmid = GpmConf.Find(mp.meta);
+    
+    if(gpmid == "GPM_ERROR"){
+      UpdateCachedItems(mp.id, (GPM_ERROR | GPM_NOT_AVAILABLE), STATUS_GPM);
+    }
+    else if( gpmid == "NO_HITS\n" || gpmid == "NO_STORE_HITS\n" ){
+      UpdateCachedItems(mp.id, GPM_NOT_AVAILABLE, STATUS_GPM);
+    }
+    else{
+      mp.gpmId = gpmid;
+      UpdateCachedItems(mp.id, GPM_READY, STATUS_GPM);
+    }
+    
+    return gpmid;
+  }
+  
+  public static void StartGpmStream(int id, string streamUrl){
+    // todo: throw exception if mp doesn't have gpm id
+    
+    if(streamUrl == "")
+      return;
+    
+    print("[CacheOptions::StartGpmStream()] streaming will start");
+    
+    UpdateCachedItems(id, GPM_STREAMING, STATUS_GPM);
+    FFmpeg.Stream(streamUrl, GlobalData.cachedir + "/full/" + id + ".ogg", id);
+    
+    print("[CacheOptions::StartGpmStream()] streaming has finished.");
+    
+    UpdateCachedItems(id, GPM_CACHED, STATUS_GPM);
+  }
+  
+  public static string GenreFetchFirst(List<MusicPoint> musicPoints){
+    // We presume that:
+    //     * we only fetch first available song
+    //     * provider is gpm
+    int itemStatus;
+    foreach(MusicPoint mp in musicPoints){
+      itemStatus = FindItemStatus(mp.id);
+      
+      if( (itemStatus & GPM_NOT_AVAILABLE) != 0 ) // we only check if it's a known unavailable song, in which case we won't even try
+        continue;
+      
+      string[] gpmid = GpmConf.FindGenre(mp.meta);
+      if( gpmid == null ){
+        UpdateCachedItems(mp.id, GPM_NOT_AVAILABLE, STATUS_GPM);
+      }
+      else{
+        mp.gpmId = gpmid[0];
+        UpdateCachedItems(mp.id, GPM_READY, STATUS_GPM);
+        return gpmid[1];
+      }
+      
+    }
+    return "";
+  }
   
   public static void FetchFirstN(TerrainChunk chunk, int n, string provider){
     int exitStatus, itemStatus;
     int nonfailed = 0;
-    
-//     print("fetching first " + n + " songs from chunk " + chunk.chunkId + ". This chunk has " + chunk.allSongs.Count + " songs in total.");
     
     if(provider == "7digital"){
       if(fuse_7digital <= 0)
@@ -314,13 +415,57 @@ public class CacheOptions : MonoBehaviour {
         
         
         if(exitStatus == 0){
-          chunk.availableSongs.Add(mp);
-          
           nonfailed++;
           if(nonfailed >= n)
             break;
         }
       }
+    }
+    
+    if(provider == "gpm"){
+      
+      foreach(MusicPoint mp in chunk.allSongs){
+        if(nonfailed >= n){
+          return;
+        }
+        
+        itemStatus = FindItemStatus(mp.id);
+        
+        if( (itemStatus & GPM_NOT_AVAILABLE) != 0 )
+          continue;
+        
+        if( (itemStatus & GPM_READY) != 0 ){
+          nonfailed++;
+          continue;
+        }
+        
+        string gpmid = GpmConf.Find(mp.meta);
+        if(gpmid == "GPM_ERROR"){
+          UpdateCachedItems(mp.id, (GPM_ERROR | GPM_NOT_AVAILABLE), STATUS_GPM);
+        }
+        else if( gpmid == "NO_HITS\n" || gpmid == "NO_STORE_HITS\n" ){
+          UpdateCachedItems(mp.id, GPM_NOT_AVAILABLE, STATUS_GPM);
+        }
+        else{
+          mp.gpmId = gpmid;
+          UpdateCachedItems(mp.id, GPM_READY, STATUS_GPM);
+          nonfailed++;
+        }
+        
+      }
+      
+    }
+  }
+  
+  public static void FetchNextN(TerrainChunk chunk, int n, string provider){
+    //todo: attempt to fetch next block of songs
+    
+  }
+  
+  static void FetchSingleThread(object mpo){
+    
+    lock(_gpm_threadcounter_lock){
+      ++gpmThreadCounter;
     }
   }
   
@@ -372,9 +517,9 @@ public class CacheOptions : MonoBehaviour {
     }
     
   }
-  
-  
+
 }
+
 
 class CachedInfo {
   public int cacheStatus;

@@ -5,16 +5,15 @@ using UnityEngine;
 public class TerrainChunk {
   public int chunkId;
   public bool tagged;                           // did we attempt to download songs from here?
-  public List<MusicPoint> availableSongs;     // songs that cache says are not unavailable
   public List<MusicPoint> allSongs;             // all songs, ordered approximately by proximity to some average point
   
-  int lastId = -1;
-  int lastAvailableId = -1;
+  public int currentId = 0;                     // index of allSongs that the chunk is currently playing
+  public int lastFetched_gpm = 0;               // index of allSongs song that gpm will try to fetch next 
+  public int lastFetched_7digital = 0;          // index of allSongs song that we'll try to fetch next from 7digital
   
   public TerrainChunk(int id){
     this.chunkId = id;
     this.tagged = false;
-    this.availableSongs = new List<MusicPoint>();
   }
   
   public static List<MusicPoint> GetOrderedChunkSongsApproximate(TerrainTree terrainTree, int pos_x, int pos_y){

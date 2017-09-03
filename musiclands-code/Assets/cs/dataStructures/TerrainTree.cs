@@ -159,6 +159,10 @@ public class TerrainTree {
     subtrees[1,1].CalculateAveragePosition();
   }
   
+  public int Count(){
+    return this.datapoints;
+  }
+  
   public int CountSongsInArea(int targetLevel, float x, float y){
     if(this.level > targetLevel){
       
@@ -185,6 +189,10 @@ public class TerrainTree {
       return null;
     }
     return this;
+  }
+  
+  public List<MusicPoint> GetSongsInArea(int targetLevel, int x, int y){
+    return GetSongsInArea(targetLevel, (float)x, (float)y);
   }
   
   public List<MusicPoint> GetSongsInArea(int targetLevel, float x, float y){

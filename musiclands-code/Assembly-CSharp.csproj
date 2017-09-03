@@ -6,7 +6,7 @@
     <ProductVersion>10.0.20506</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <RootNamespace></RootNamespace>
-    <ProjectGuid>{361B8DC5-7BCB-0534-695B-433DC6206FC5}</ProjectGuid>
+    <ProjectGuid>{C18E5199-D951-746D-66FE-31CA1C7E346C}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <AssemblyName>Assembly-CSharp</AssemblyName>
@@ -19,7 +19,7 @@
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>Temp\bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE;UNITY_5_3_OR_NEWER;UNITY_5_4_OR_NEWER;UNITY_5_5_OR_NEWER;UNITY_5_6_OR_NEWER;UNITY_5_6_0;UNITY_5_6;UNITY_5;UNITY_64;UNITY_ANALYTICS;ENABLE_AUDIO;ENABLE_CACHING;ENABLE_CLOTH;ENABLE_DUCK_TYPING;ENABLE_GENERICS;ENABLE_PVR_GI;ENABLE_MICROPHONE;ENABLE_MULTIPLE_DISPLAYS;ENABLE_PHYSICS;ENABLE_RUNTIME_NAVMESH_BUILDING;ENABLE_SPRITERENDERER_FLIPPING;ENABLE_SPRITES;ENABLE_TERRAIN;ENABLE_RAKNET;ENABLE_UNET;ENABLE_LZMA;ENABLE_UNITYEVENTS;ENABLE_WEBCAM;ENABLE_WWW;ENABLE_CLOUD_SERVICES_COLLAB;ENABLE_CLOUD_SERVICES_ADS;ENABLE_CLOUD_HUB;ENABLE_CLOUD_PROJECT_ID;ENABLE_CLOUD_SERVICES_UNET;ENABLE_CLOUD_SERVICES_BUILD;ENABLE_CLOUD_LICENSE;ENABLE_EDITOR_METRICS;ENABLE_EDITOR_METRICS_CACHING;ENABLE_NATIVE_ARRAY;INCLUDE_DYNAMIC_GI;INCLUDE_GI;PLATFORM_SUPPORTS_MONO;RENDER_SOFTWARE_CURSOR;INCLUDE_PUBNUB;ENABLE_PLAYMODE_TESTS_RUNNER;ENABLE_SCRIPTING_NEW_CSHARP_COMPILER;ENABLE_VIDEO;UNITY_STANDALONE_LINUX;UNITY_STANDALONE;UNITY_STANDALONE_LINUX_API;ENABLE_SUBSTANCE;ENABLE_RUNTIME_GI;ENABLE_MOVIES;ENABLE_NETWORK;ENABLE_CRUNCH_TEXTURE_COMPRESSION;ENABLE_UNITYWEBREQUEST;ENABLE_CLOUD_SERVICES;ENABLE_CLOUD_SERVICES_ANALYTICS;ENABLE_CLOUD_SERVICES_PURCHASING;ENABLE_CLOUD_SERVICES_CRASH_REPORTING;ENABLE_CLUSTERINPUT;ENABLE_VR;ENABLE_WEBSOCKET_HOST;ENABLE_MONO;NET_2_0;ENABLE_PROFILER;UNITY_ASSERTIONS;UNITY_EDITOR;UNITY_EDITOR_64;UNITY_EDITOR_LINUX;ENABLE_NATIVE_ARRAY_CHECKS;UNITY_TEAM_LICENSE</DefineConstants>
+    <DefineConstants>DEBUG;TRACE;UNITY_5_3_OR_NEWER;UNITY_5_4_OR_NEWER;UNITY_5_5_OR_NEWER;UNITY_5_6_OR_NEWER;UNITY_5_6_0;UNITY_5_6;UNITY_5;UNITY_64;UNITY_ANALYTICS;ENABLE_AUDIO;ENABLE_CACHING;ENABLE_CLOTH;ENABLE_DUCK_TYPING;ENABLE_GENERICS;ENABLE_PVR_GI;ENABLE_MICROPHONE;ENABLE_MULTIPLE_DISPLAYS;ENABLE_PHYSICS;ENABLE_RUNTIME_NAVMESH_BUILDING;ENABLE_SPRITERENDERER_FLIPPING;ENABLE_SPRITES;ENABLE_TERRAIN;ENABLE_RAKNET;ENABLE_UNET;ENABLE_LZMA;ENABLE_UNITYEVENTS;ENABLE_WEBCAM;ENABLE_WWW;ENABLE_CLOUD_SERVICES_COLLAB;ENABLE_CLOUD_SERVICES_ADS;ENABLE_CLOUD_HUB;ENABLE_CLOUD_PROJECT_ID;ENABLE_CLOUD_SERVICES_UNET;ENABLE_CLOUD_SERVICES_BUILD;ENABLE_CLOUD_LICENSE;ENABLE_EDITOR_METRICS;ENABLE_EDITOR_METRICS_CACHING;ENABLE_NATIVE_ARRAY;INCLUDE_DYNAMIC_GI;INCLUDE_GI;PLATFORM_SUPPORTS_MONO;RENDER_SOFTWARE_CURSOR;INCLUDE_PUBNUB;ENABLE_PLAYMODE_TESTS_RUNNER;ENABLE_SCRIPTING_NEW_CSHARP_COMPILER;ENABLE_VIDEO;UNITY_STANDALONE_LINUX;UNITY_STANDALONE;UNITY_STANDALONE_LINUX_API;ENABLE_SUBSTANCE;ENABLE_RUNTIME_GI;ENABLE_MOVIES;ENABLE_NETWORK;ENABLE_CRUNCH_TEXTURE_COMPRESSION;ENABLE_UNITYWEBREQUEST;ENABLE_CLOUD_SERVICES;ENABLE_CLOUD_SERVICES_ANALYTICS;ENABLE_CLOUD_SERVICES_PURCHASING;ENABLE_CLOUD_SERVICES_CRASH_REPORTING;ENABLE_CLUSTERINPUT;ENABLE_VR;ENABLE_WEBSOCKET_HOST;ENABLE_MONO;NET_2_0;ENABLE_PROFILER;UNITY_ASSERTIONS;UNITY_EDITOR;UNITY_EDITOR_64;UNITY_EDITOR_LINUX;ENABLE_NATIVE_ARRAY_CHECKS;UNITY_TEAM_LICENSE;CROSS_PLATFORM_INPUT</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <NoWarn>0169</NoWarn>
@@ -46,26 +46,41 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-     <Compile Include="Assets\cs\BasicRadioCtl.cs" />
      <Compile Include="Assets\cs\Blur.cs" />
      <Compile Include="Assets\cs\Metadata.cs" />
      <Compile Include="Assets\cs\MetadataTree.cs" />
-     <Compile Include="Assets\cs\PC\PlayerController.cs" />
-     <Compile Include="Assets\cs\Peak.cs" />
+     <Compile Include="Assets\cs\PlaySongItem.cs" />
      <Compile Include="Assets\cs\Scaling\Lanczos.cs" />
      <Compile Include="Assets\cs\Scaling\SColor.cs" />
      <Compile Include="Assets\cs\Scaling\ScaleImage.cs" />
      <Compile Include="Assets\cs\Scaling\ScaleImageTest.cs" />
      <Compile Include="Assets\cs\Scaling\ScaleUnityTexture.cs" />
      <Compile Include="Assets\cs\Settings\CacheOptions.cs" />
-     <Compile Include="Assets\cs\Settings\Menuctl.cs" />
+     <Compile Include="Assets\cs\Settings\TerrainSettings.cs" />
+     <Compile Include="Assets\cs\Settings\providers\GpmConf.cs" />
      <Compile Include="Assets\cs\Settings\providers\SdigitalConf.cs" />
      <Compile Include="Assets\cs\TerrainInit.cs" />
+     <Compile Include="Assets\cs\ctl\BasicRadioCtl.cs" />
+     <Compile Include="Assets\cs\ctl\BottomMapCtl.cs" />
+     <Compile Include="Assets\cs\ctl\DeletCache.cs" />
+     <Compile Include="Assets\cs\ctl\DownloadCtl.cs" />
+     <Compile Include="Assets\cs\ctl\Keyctl.cs" />
+     <Compile Include="Assets\cs\ctl\KeyctlGameMenu.cs" />
+     <Compile Include="Assets\cs\ctl\KeyctlMap.cs" />
+     <Compile Include="Assets\cs\ctl\Mapctl.cs" />
+     <Compile Include="Assets\cs\ctl\Menuctl.cs" />
+     <Compile Include="Assets\cs\ctl\MusicManagerCtl.cs" />
+     <Compile Include="Assets\cs\ctl\PeakLabelCtl.cs" />
+     <Compile Include="Assets\cs\ctl\PlayerController.cs" />
+     <Compile Include="Assets\cs\ctl\Songcubectl.cs" />
      <Compile Include="Assets\cs\data\GlobalData.cs" />
+     <Compile Include="Assets\cs\data\SongItemData.cs" />
      <Compile Include="Assets\cs\data\SoundclipManagement.cs" />
      <Compile Include="Assets\cs\dataStructures\MusicPoint.cs" />
+     <Compile Include="Assets\cs\dataStructures\Peak.cs" />
      <Compile Include="Assets\cs\dataStructures\TerrainChunk.cs" />
      <Compile Include="Assets\cs\dataStructures\TerrainTree.cs" />
+     <Compile Include="Assets\cs\junkCode\misc.cs" />
      <Compile Include="Assets\cs\utils\FFmpeg.cs" />
      <Compile Include="Assets\cs\utils\FileLoader.cs" />
      <Compile Include="Assets\cs\utils\MonoHttp\Helpers.cs" />
@@ -74,15 +89,18 @@
      <Compile Include="Assets\cs\utils\PriorityQueue.cs" />
      <Compile Include="Assets\cs\utils\PriorityQueueF.cs" />
      <Compile Include="Assets\cs\utils\Python.cs" />
+     <Compile Include="Assets\cs\utils\SS.cs" />
      <Compile Include="Assets\cs\utils\ThreadsafeQueue.cs" />
-     <None Include="Assets\Standard Assets\Effects\Projectors\Guidelines.txt" />
-     <None Include="Assets\Standard Assets\Effects\ImageEffects\Readme.txt" />
+     <Compile Include="Assets\cs\utils\Voronoish.cs" />
+     <None Include="Assets\Resources\scripts\python2\new.txt" />
+     <None Include="Assets\Standard Assets\Environment\Water\Water4\Shaders\FXWater4Simple.shader" />
      <None Include="Assets\Standard Assets\Environment\Water (Basic)\Shaders\FXWaterBasic.shader" />
      <None Include="Assets\Standard Assets\CrossPlatformInput\CrossPlatformInputGuidelines.txt" />
-     <None Include="Assets\Standard Assets\Effects\Projectors\Shaders\ProjectorLight.shader" />
-     <None Include="Assets\Standard Assets\Effects\Projectors\Shaders\ProjectorMultiply.shader" />
+     <None Include="Assets\Standard Assets\Environment\Water\Water\Shaders\FXWaterPro.shader" />
      <None Include="Assets\Standard Assets\Cameras\CameraGuidelines.txt" />
      <None Include="Assets\Standard Assets\Characters\FirstPersonCharacter\FirstPersonCharacterGuidelines.txt" />
+     <None Include="Assets\Standard Assets\Environment\Water\Water4\Shaders\WaterInclude.cginc" />
+     <None Include="Assets\Standard Assets\Environment\Water\Water4\Shaders\FXWater4Advanced.shader" />
  <Reference Include="UnityEngine.UI">
  <HintPath>/opt/Unity/Editor/Data/UnityExtensions/Unity/GUISystem/UnityEngine.UI.dll</HintPath>
  </Reference>
@@ -107,7 +125,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="Assembly-CSharp-firstpass.csproj">
-      <Project>{28EE8453-9665-D1B3-04E6-C4539EB75954}</Project>      <Name>Assembly-CSharp-firstpass</Name>    </ProjectReference>
+      <Project>{28E654FC-5C96-6B71-F8BE-A6BECED21289}</Project>      <Name>Assembly-CSharp-firstpass</Name>    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

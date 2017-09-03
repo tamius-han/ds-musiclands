@@ -3,8 +3,6 @@ import argparse
 import requests
 from requests_oauthlib import OAuth1
 
-cachedir = "./Assets/Resources/cache/clips/"
-
 def search_trackid(search, key, secret):
     url = 'https://api.7digital.com/1.2/track/search'
     auth = OAuth1(key, secret, signature_type='query')
@@ -76,10 +74,16 @@ if __name__ == '__main__':
         nargs='?',
         default=""
     )
+    parser.add_argument(
+        '--dir',
+        help="file goes here",
+        nargs='?',
+        default=""
+    )
     args = parser.parse_args()
     
     if args.s != "":
-        outfile = cachedir + "%s.mp3" % args.s
+        outfile = args.dir + "/%s.mp3" % args.s
         
         #if not os.path.exists(outfile) :   # don't download if we already have it
             
