@@ -18,12 +18,15 @@ class GpmService(rpyc.Service):
   
   api   = Mobileclient()
   mylib = [];
+  saved_songs_pid = ""   # ID of the playlist for songs we want to save while exploring
   
   # we need something to manually clean the library in case of a mess
   newly_added = [];
+
   
   def exposed_ping(self):
     return true;
+
   
   def exposed_gpm_login_nodeviceid(self, uname, passwd):
     print "trying to log wihtout device id"
@@ -33,14 +36,23 @@ class GpmService(rpyc.Service):
     
     if status == True:
       global newly_added
-      global mylib
-      mylib = api.get_all_songs()
+      global saved_songs_pid
       newly_added = []
+      
+      
+      # fetch all the playlist, save ID of the one we'll use
+      playlists = api.get_all_playlists()
+      for p in playlists:
+        if p['name'] == "La la landscape | saved songs" :
+          saved_songs_pid = p['id']
+          break     # although friendly reminder: 'name' doesn't have to be unique.
+      
       print "login successful."
     else:
       print "login failed."
     
     return status
+
     
   def exposed_gpm_login(self, uname, passwd, deviceId):
     print "trying to log in as " + uname + " with deviceId"
@@ -51,17 +63,28 @@ class GpmService(rpyc.Service):
     if status == True:
       global mylib
       global newly_added
+      global saved_songs_pid
+      saved_songs_pid = "";
       newly_added = []
-      mylib = api.get_all_songs()
-      print "login sucfcessful."
+      
+            # fetch all the playlist, save ID of the one we'll use
+      playlists = api.get_all_playlists()
+      for p in playlists:
+        if p['name'] == "La la landscape | saved songs" :
+          saved_songs_pid = p['id']
+          break     # although friendly reminder: 'name' doesn't have to be unique.
+      
+      print "login sucfcessful. id of saved songs playlist: " + saved_songs_pid
     else:
       print "login failed."
     
     return status
+
   
   def exposed_gpm_logout(self):
     print "logged out"
     return api.logout()
+
   
   def exposed_gpm_search_get_id(self, query):
     candidates = api.search(query)
@@ -78,6 +101,7 @@ class GpmService(rpyc.Service):
       #return newsong[0] 
     
     return "NO_STORE_ID"
+
   
   def exposed_gpm_search_get_genre_and_id(self, query):
     candidates = api.search(query)
@@ -90,42 +114,10 @@ class GpmService(rpyc.Service):
       newly_added.append(newsong[0])
       return (candidates['song_hits'][0]['track']['genre'] + ":|:|:" + newsong[0])
 
+
   def exposed_gpm_get_stream_url(self, songId):
     return api.get_stream_url(songId)
   
-  def exposed_gpm_delete_if_new(self, songId):
-    for track in mylib:
-      if track['id'] == songId:
-        return "SONG_EXISTED"
-    
-    api.delete_songs(songId)
-    print "deleted " + songId + " from library as it was added by our script."
-    return "SONG_DELETED"
-  
-  def exposed_gpm_delete_force(self, songId):
-    return api.delete_songs(songId)
-  
-  def exposed_gpm_clean(self):
-    print "removing newly added songs from library"
-    global newly_added
-    for songId in newly_added:
-      match = False;
-      for track in mylib:
-        if track['id'] == songId:
-          match = True;
-      if match != True:
-        api.delete_songs(songId)
-    
-    print "newly added songs removed from library"
-    return "It is done."
-  
-  def exposed_gpm_clean_all(self):
-    global newly_added
-    for songId in newly_added:
-      api.delete_songs(songId)
-    
-    print "all songs played in current session have been removed from gpm library"
-    return "It is done."
   
   def exposed_shutdown(self):
     print "shutting down"
@@ -133,8 +125,23 @@ class GpmService(rpyc.Service):
     sys.exit();
   
   
-  def exposed_newly_added(self):
-    return newly_added;
+  def exposed_gpm_give_thumbs_up(self, sid):
+    print "giving thumbs up to song " + sid
+    return api.rate_songs(sid, 5)
+  
+  
+  def exposed_gpm_add_to_playlist(self, sid):
+    global saved_songs_pid;
+    print "saving song with id: " + sid + " to playlist " + saved_songs_pid + " ..."
+    
+    # check if saved_songs_pid is empty. If it's empty, we'll have to create a new playlist
+    if saved_songs_pid == "" :
+      print "we dont have playlist, so we'll create one."
+      saved_songs_pid = api.create_playlist("La la landscape | saved songs", "Songs that you saved while exploring musical landscape");
+    
+    # now we 100% know that we have a playlist to call our own
+    return api.add_songs_to_playlist(saved_songs_pid, sid)
+  
   
 # start service server here
 

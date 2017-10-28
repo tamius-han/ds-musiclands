@@ -25,29 +25,15 @@ if __name__ == '__main__':
   
   elif args[1] == "get_stream":
     print gpm.gpm_get_stream_url(args[2])
+
+  elif args[1] == "thumbs_up":
+    print gpm.gpm_give_thumbs_up(args[2])
   
-  elif args[1] == "remove_new":
-    print gpm.gpm_delete_if_new(args[2])
-
-  elif args[1] == "delete_new":
-    print gpm.gpm_delete_if_new(args[2])
-
-  elif args[1] == "delete_force":
-    print gpm.gpm_delete_force(args[2])
-
-  elif args[1] == "clean":
-    print gpm.gpm_clean()
-
-  elif args[1] == "clean_all":
-    print gpm.gpm_clean_all()
-
+  elif args[1] == "save":
+    print gpm.gpm_add_to_playlist(args[2])
+  
   elif args[1] == "shutdown":
     print gpm.shutdown()
-
-  elif args[1] == "newly_added":
-    file=gpm.newly_added()
-    for line in file:
-      print line
 
   else:
     print "unknown command"

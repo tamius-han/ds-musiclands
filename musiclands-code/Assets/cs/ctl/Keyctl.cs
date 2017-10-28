@@ -116,6 +116,24 @@ public class Keyctl : MonoBehaviour {
       }
     }
     
+    if(Input.GetKeyDown(KeyCode.Alpha2)){
+      // like
+      
+      string sid = BasicRadioCtl.getCurrentSongGpm();
+      if( sid != "" )
+        Python.RunScriptBg("gpm-client.py", ("thumbs_up " + sid));
+    }
+    if(Input.GetKeyDown(KeyCode.Alpha3)){
+      // add to playlist
+      
+      string sid = BasicRadioCtl.getCurrentSongGpm();
+      
+      print("adding song " + sid + " to saved playlist");
+      
+      if( sid != "" )
+        Python.RunScriptBg("gpm-client.py", ("save " + sid));
+    }
+    
   }
   
   void Start () {

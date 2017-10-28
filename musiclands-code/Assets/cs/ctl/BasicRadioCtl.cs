@@ -35,10 +35,8 @@ public class BasicRadioCtl : MonoBehaviour {
   
   static float chunkFraction;
   static bool initialized = false;
+  static MusicPoint currentSong = null;
   int lastChunk_x, lastChunk_y, chunkTag;
-  
-  
-  
   
   
   /** non-static stuff **/
@@ -82,7 +80,13 @@ public class BasicRadioCtl : MonoBehaviour {
   }
   
   
-  
+  /*** ***/
+  public static string getCurrentSongGpm(){
+    if(currentSong != null)
+      return currentSong.gpmId;
+    
+    return "";
+  }
   
   
   /*** internal static ***/
@@ -310,6 +314,7 @@ public class BasicRadioCtl : MonoBehaviour {
 //       if( (status & CacheOptions.PLAYABLE) != 0){
 //         // good, is playable. Let's play the clip thxbai
 //         StartCoroutine(PlayClip(nowPlay));
+//         BasicRadioCtl.currentSong = nowPlay;
 //         yield break;
 //       }
 //       
@@ -333,6 +338,7 @@ public class BasicRadioCtl : MonoBehaviour {
 //     if( (status & (CacheOptions.GPM_CACHED | CacheOptions.GPM_STREAMING)) != 0 ){
 //       // available from our GMP cache!
 //       StartCoroutine(PlayFull(nowPlay));
+//       BasicRadioCtl.currentSong = nowPlay;
 //       yield break;
 //     }
     
@@ -374,11 +380,13 @@ public class BasicRadioCtl : MonoBehaviour {
       System.Threading.Thread.Sleep(500); // 500ms should be enough buffer
       
       StartCoroutine(PlayFull(nowPlay));
+      BasicRadioCtl.currentSong = nowPlay;
     }
     
     if ( (status & (CacheOptions.GPM_STREAMING | CacheOptions.GPM_CACHED) ) != 0 ){
       // we're already streaming
       StartCoroutine(PlayFull(nowPlay));
+      BasicRadioCtl.currentSong = nowPlay;
     }
     
     /*    
@@ -386,6 +394,7 @@ public class BasicRadioCtl : MonoBehaviour {
       if( (status & CacheOptions.PLAYABLE) != 0){
         // good, is playable. Let's play the clip thxbai
         StartCoroutine(PlayClip(nowPlay));
+        BasicRadioCtl.currentSong = nowPlay;
         yield break;
       }
       // must be non-playable, then.
@@ -397,6 +406,7 @@ public class BasicRadioCtl : MonoBehaviour {
         yield return null;
       
       StartCoroutine(PlayClip(nowPlay));
+      BasicRadioCtl.currentSong = nowPlay;
     }*/
   }
   
