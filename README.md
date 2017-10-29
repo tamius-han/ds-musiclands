@@ -10,25 +10,50 @@ Songs start playing when you enter a chunk. Since they're not pre-downloaded —
 
 * Unity3D
 * Unity3D Standard Assets (from unity store — not provided here)
-* python2 (needs to be in path)
+* python2 (needs to be in /usr/bin/python2)
 * following python libraries: gpmusicapi, requests, rpyc, (todo—see 7digital dependencies) — use `pip install` to install them.
-* ffmpeg (needs to be in path)
-* Linux
-
-Currently, there's been no effort at all to make this multi-platform. Windows support could be prolly hacked real fast.
+* ffmpeg (needs to be in /usr/bin/ffmpeg)
 
 If you want to actually listen to music, you'll also need either of the following:
 
-* 7digital API key
 * Google Play Music (GPM) subscription
 
-7digital's free API is actually rather restrictive, lacks songs (can't pull from countries like UK, DE, US. A great deal of songs aren't available outside of the bigger countries that we can't pretend we're in), and this program probably breaks 7digital's terms of service. **If you have GPM subscription, just use that instead** (or - better yet - alongside 7digital's offerings).
+* Have good amount of disk space ready, there's no cache management at all yet
 
-Entering 7digital details: go to `musiclands-code/Assets/Resources/conf`. In there, make a file called `7digital` (no file extension). First line should have your 7digital key, second should have your 7digital secret.
+## Setting up Google Play Music:
 
-**GPM not yet implemented. Soon-ish.**
+If you have paid subscription to Google Play Music:
 
-* Have good amount of disk space ready, there's no cache management at all
+0. Make sure you have an android (or iOS) phone or tablet connected to your paid GPM account.
+
+1. Open python console.
+2. Do this:
+
+```
+import gmusicapi
+api = gmusicapi.Mobileclient()
+api.login('user@gmail.com', 'my-password', Mobileclient.FROM_MAC_ADDRESS)
+api.get_registered_devices()
+```
+From the output of the last command, select a device with type `ANDROID` or `IOS` and take its ID (remove the 0x part though). 
+
+
+3. Run `gpm-server.py` in `musiclands-code/Assets/Resources/scripts/python2/`
+4. Run `gpm-client.py login <email> <password> <id you got in step 2>` in `musiclands-code/Assets/Resources/scripts/python2/`
+
+
+## Re-enabling 7digital
+
+Code to deal is still in the project. You will need to re-enable it, probably disable Google Play Music and rewrite some code that assumes GPM. 
+
+### Credentials for 7digital:
+
+In this folder:
+
+`musiclands-code/Assets/Resources/conf/`
+
+Make a file named `7digital`. First line in that file is your API key, second line is secret (I think — refer to the implementation in code for more details)
+
 
 ## TODO:
 
